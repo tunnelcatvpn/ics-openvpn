@@ -12,12 +12,11 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.os.RemoteException;
 import android.preference.PreferenceManager;
 import android.security.KeyChain;
 import android.security.KeyChainException;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.Base64;
 
@@ -61,7 +60,7 @@ public class VpnProfile implements Serializable, Cloneable {
     public static final String INLINE_TAG = "[[INLINE]]";
     public static final String DISPLAYNAME_TAG = "[[NAME]]";
     public static final int MAXLOGLEVEL = 4;
-    public static final int CURRENT_PROFILE_VERSION = 7;
+    public static final int CURRENT_PROFILE_VERSION = 8;
     public static final int DEFAULT_MSSFIX_SIZE = 1280;
     public static final int TYPE_CERTIFICATES = 0;
     public static final int TYPE_PKCS12 = 1;
@@ -164,6 +163,7 @@ public class VpnProfile implements Serializable, Cloneable {
     private UUID mUuid;
     private int mProfileVersion;
 
+    public boolean mBlockUnusedAddressFamilies =true;
 
     public VpnProfile(String name) {
         mUuid = UUID.randomUUID();
@@ -275,29 +275,36 @@ public class VpnProfile implements Serializable, Cloneable {
     }
 
     public void upgradeProfile() {
-        if (mProfileVersion < 2) {
-            /* default to the behaviour the OS used */
-            mAllowLocalLAN = Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT;
-        }
 
-        if (mProfileVersion < 4) {
-            moveOptionsToConnection();
-            mAllowedAppsVpnAreDisallowed = true;
-        }
-        if (mAllowedAppsVpn == null)
-            mAllowedAppsVpn = new HashSet<>();
+        /* Fallthrough is intended here */
+        switch(mProfileVersion) {
+            case 0:
+            case 1:
+                /* default to the behaviour the OS used */
+                mAllowLocalLAN = Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT;
+            case 2:
+            case 3:
+                moveOptionsToConnection();
+                mAllowedAppsVpnAreDisallowed = true;
 
-        if (mConnections == null)
-            mConnections = new Connection[0];
+                if (mAllowedAppsVpn == null)
+                    mAllowedAppsVpn = new HashSet<>();
 
-        if (mProfileVersion < 6) {
-            if (TextUtils.isEmpty(mProfileCreator))
-                mUserEditable = true;
-        }
-        if (mProfileVersion < 7) {
-            for (Connection c : mConnections)
-                if (c.mProxyType == null)
-                    c.mProxyType = Connection.ProxyType.NONE;
+                if (mConnections == null)
+                    mConnections = new Connection[0];
+            case 4:
+            case 5:
+
+                if (TextUtils.isEmpty(mProfileCreator))
+                    mUserEditable = true;
+            case 6:
+                for (Connection c : mConnections)
+                    if (c.mProxyType == null)
+                        c.mProxyType = Connection.ProxyType.NONE;
+            case 7:
+                if (mAllowAppVpnBypass)
+                    mBlockUnusedAddressFamilies = !mAllowAppVpnBypass;
+            default:
         }
 
         mProfileVersion = CURRENT_PROFILE_VERSION;
@@ -337,6 +344,7 @@ public class VpnProfile implements Serializable, Cloneable {
             cfg.append("management-hold\n\n");
 
             cfg.append(String.format("setenv IV_GUI_VER %s \n", openVpnEscape(getVersionEnvString(context))));
+            cfg.append("setenv IV_SSO openurl,crtext\n");
             String versionString = getPlatformVersionEnvString();
             cfg.append(String.format("setenv IV_PLAT_VER %s\n", openVpnEscape(versionString)));
         } else {
@@ -493,7 +501,7 @@ public class VpnProfile implements Serializable, Cloneable {
             else
                 cfg.append(insertFileData("tls-auth", mTLSAuthFilename));
 
-            if (!TextUtils.isEmpty(mTLSAuthDirection) && !useTlsCrypt) {
+            if (!TextUtils.isEmpty(mTLSAuthDirection) && !useTlsCrypt && !useTlsCrypt2) {
                 cfg.append("key-direction ");
                 cfg.append(mTLSAuthDirection);
                 cfg.append("\n");
@@ -665,7 +673,7 @@ public class VpnProfile implements Serializable, Cloneable {
                 NativeUtils.getNativeAPI(), Build.BRAND, Build.BOARD, Build.MODEL);
     }
 
-    public String getVersionEnvString(Context c) {
+    static public String getVersionEnvString(Context c) {
         String version = "unknown";
         try {
             PackageInfo packageinfo = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
@@ -1157,7 +1165,7 @@ public class VpnProfile implements Serializable, Cloneable {
         // The Jelly Bean *evil* Hack
         // 4.2 implements the RSA/ECB/PKCS1PADDING in the OpenSSLprovider
         if (Build.VERSION.SDK_INT == Build.VERSION_CODES.JELLY_BEAN) {
-            return processSignJellyBeans(privkey, data);
+            return processSignJellyBeans(privkey, data, pkcs1padding);
         }
 
 
@@ -1196,7 +1204,7 @@ public class VpnProfile implements Serializable, Cloneable {
         }
     }
 
-    private byte[] processSignJellyBeans(PrivateKey privkey, byte[] data) {
+    private byte[] processSignJellyBeans(PrivateKey privkey, byte[] data, boolean pkcs1padding) {
         try {
             Method getKey = privkey.getClass().getSuperclass().getDeclaredMethod("getOpenSSLKey");
             getKey.setAccessible(true);
@@ -1214,7 +1222,7 @@ public class VpnProfile implements Serializable, Cloneable {
             getPkeyContext.setAccessible(false);
 
             // 112 with TLS 1.2 (172 back with 4.3), 36 with TLS 1.0
-            return NativeUtils.rsasign(data, pkey);
+            return NativeUtils.rsasign(data, pkey, pkcs1padding);
 
         } catch (NoSuchMethodException | InvalidKeyException | InvocationTargetException | IllegalAccessException | IllegalArgumentException e) {
             VpnStatus.logError(R.string.error_rsa_sign, e.getClass().toString(), e.getLocalizedMessage());

@@ -7,6 +7,7 @@ package de.blinkt.openvpn.core;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Build;
 
 import junit.framework.Assert;
 
@@ -25,7 +26,8 @@ import static de.blinkt.openvpn.VpnProfile.TYPE_USERPASS;
  * Created by arne on 14.03.18.
  */
 
-@Config(manifest= Config.NONE)
+
+@Config(sdk = Build.VERSION_CODES.O_MR1)
 @RunWith(RobolectricTestRunner.class)
 public class TestConfigGenerator {
     @Test
@@ -46,11 +48,6 @@ public class TestConfigGenerator {
 
         VpnProfile vp = new VpnProfile ("test") {
             @Override
-            public String getVersionEnvString(Context c) {
-                return "no ver";
-            }
-
-            @Override
             public String getPlatformVersionEnvString() {
                 return "test";
             }
@@ -63,6 +60,13 @@ public class TestConfigGenerator {
         for (Connection connection: vp.mConnections)
             Assert.assertTrue(connection.mProxyType == Connection.ProxyType.NONE);
 
+    }
+
+    @Test
+    public void testEscape()
+    {
+        String uglyPassword = "^OrFg1{G^SS8b4J@B$Y1Dr\\GwG-dw3aBJ/R@WI*doCVP',+:>zjqC[&b6[8=KL:`{l&:i!_4*npE?4k2c^(n>9Tjp~u2Z]l8(y&Gg<-cwR2k=yKK:-%f-ezQ\"^g)[d,kbsu$cqih\\wA~on$~)QSODtip2cd,+->qv,roF*9>6q:lTepm=r?Y-+(K]ERGn\"+AiLj<(R_'BOg:vsh0wh]BQ-PVo534;l%R*FF!+,$?Q00%839(k?E!x0R[Lx6qK\\&";
+        String escapedUglyPassword = VpnProfile.openVpnEscape(uglyPassword);
     }
 
 

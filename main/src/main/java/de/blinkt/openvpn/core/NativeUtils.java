@@ -6,11 +6,12 @@
 package de.blinkt.openvpn.core;
 
 import android.os.Build;
+import de.blinkt.openvpn.BuildConfig;
 
 import java.security.InvalidKeyException;
 
 public class NativeUtils {
-    public static native byte[] rsasign(byte[] input, int pkey) throws InvalidKeyException;
+    public static native byte[] rsasign(byte[] input, int pkey, boolean pkcs1padding) throws InvalidKeyException;
 
     public static native String[] getIfconfig() throws IllegalArgumentException;
 
@@ -41,12 +42,14 @@ public class NativeUtils {
             System.loadLibrary("opvpnutil");
             if (Build.VERSION.SDK_INT == Build.VERSION_CODES.JELLY_BEAN)
                 System.loadLibrary("jbcrypto");
+
+            if (!BuildConfig.FLAVOR.equals("skeleton")) {
+                System.loadLibrary("osslspeedtest");
+            }
         }
     }
 
     public static boolean isRoboUnitTest() {
-        return "robolectric".equals(Build.FINGERPRINT);
-    }
-
+        return "robolectric".equals(Build.FINGERPRINT); }
 
 }
